@@ -38,14 +38,16 @@ Useful outputs after apply:
 
 | Workflow | Purpose |
 |---|---|
-| **Build** | `terraform` validate → plan → apply (later: configure node via Ansible) |
+| **Build** | Terraform apply → wait for SSH → Ansible (`infra-ansible` site.yml) |
 | **Destroy** | `terraform destroy` |
 
 ### Required GitHub secrets
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
-- `SSH_PUBLIC_KEY`
+- `SSH_PUBLIC_KEY` — used by Terraform for the EC2 key pair
+- `SSH_PRIVATE_KEY` — used by Ansible to SSH into the instance
+- `ANSIBLE_REPO_TOKEN` — GitHub PAT with read access to `VictorB13/infra-ansible` (required if that repo is private)
 
 Optional variable: `BUCKET_NAME` (defaults to `todo-app-tfstate-victor`).
 

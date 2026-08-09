@@ -9,17 +9,15 @@ permissions:
 env:
   AWS_REGION: eu-central-1
   TF_WORKING_DIR: .
+  ANSIBLE_REPO: VictorB13/infra-ansible
 
 jobs:
   build:
-    name: Terraform Validate & Apply
+    name: Terraform Apply & Ansible Provision
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.TF_WORKING_DIR }}
 
     steps:
-      - name: Checkout
+      - name: Checkout Terraform repo
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
@@ -35,25 +33,99 @@ jobs:
           terraform_version: "1.6.6"
           terraform_wrapper: false
 
-      - name: Write SSH public key
+      - name: Write SSH key pair
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 644 ~/.ssh/id_rsa.pub
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null
 
       - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -input=false
 
       - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform validate
 
       - name: Terraform Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform plan -input=false -out=tfplan \
             -var="bucket_name=${{ vars.BUCKET_NAME || 'todo-app-tfstate-victor' }}" \
             -var="public_key_path=$HOME/.ssh/id_rsa.pub"
+
       - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -input=false -auto-approve tfplan
 
-      - name: Show Outputs
+      - name: Read EC2 public IP
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        id: tf_out
+        run: |
+          IP="$(terraform output -raw ec2_public_ip)"
+          echo "ec2_ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "EC2 public IP: $IP"
+
+      - name: Checkout Ansible repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ANSIBLE_REPO }}
+          path: infra-ansible
+          
+
+      - name: Setup Python & Ansible
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3 python3-pip sshpass
+          pip3 install --user "ansible-core>=2.14,<2.18"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Wait for SSH
+        run: |
+          IP="${{ steps.tf_out.outputs.ec2_ip }}"
+          echo "Waiting for SSH on $IP..."
+          for i in $(seq 1 36); do
+            if ssh -i ~/.ssh/id_rsa \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              ubuntu@"$IP" 'echo ready'; then
+              echo "SSH is up"
+              exit 0
+            fi
+            echo "Attempt $i/36 — retrying in 10s..."
+            sleep 10
+          done
+          echo "SSH did not become ready in time"
+          exit 1
+
+      - name: Write Ansible inventory
+        working-directory: infra-ansible
+        env:
+          EC2_IP: ${{ steps.tf_out.outputs.ec2_ip }}
+        run: |
+          printf '%s\n' \
+            'all:' \
+            '  children:' \
+            '    k3s:' \
+            '      hosts:' \
+            '        k3s-node:' \
+            "          ansible_host: ${EC2_IP}" \
+            '          ansible_user: ubuntu' \
+            "          ansible_ssh_private_key_file: ${HOME}/.ssh/id_rsa" \
+            > inventory/ci.yml
+          cat inventory/ci.yml
+
+      - name: Run Ansible (packages → k3s → hardening)
+        working-directory: infra-ansible
+        run: |
+          ansible-playbook playbooks/site.yml \
+            -i inventory/ci.yml \
+            -e "k3s_tls_san=${{ steps.tf_out.outputs.ec2_ip }}"
+
+      - name: Show Terraform outputs
+        working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform output
