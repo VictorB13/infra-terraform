@@ -71,7 +71,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 # EC2 Instance — the actual server
-# t2.micro is free tier eligible (1 vCPU, 1GB RAM)
+# t3.micro is free tier eligible (2 vCPU burstable, 1GB RAM)
 resource "aws_instance" "main" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
