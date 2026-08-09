@@ -1,0 +1,41 @@
+# Local variable values / secrets
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform state (never commit)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# Terraform working dirs / lock (CI regenerates providers)
+.terraform/
+.terraform.tfstate.lock.info
+
+# Optional: keep lock file for reproducible CI — uncomment to ignore it
+# .terraform.lock.hcl
+
+# Plan files
+*.tfplan
+tfplan
+*.out
+
+# Secrets / keys
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+.env
+.env.*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*~
