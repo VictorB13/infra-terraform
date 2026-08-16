@@ -169,7 +169,7 @@ jobs:
             > /tmp/k3s-inventory.yml
           cat /tmp/k3s-inventory.yml
 
-      - name: Run Ansible (packages → k3s → hardening)
+      - name: Run Ansible (packages → k3s → hardening → ArgoCD)
         working-directory: infra-ansible
         run: |
           ansible-playbook playbooks/site.yml \
@@ -183,18 +183,23 @@ jobs:
         run: |
           set -euo pipefail
           IP="$EC2_IP"
+          SSH_OPTS="-i ~/.ssh/id_rsa -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
           # Fetch kubeconfig from the node (written by the k3s Ansible role)
-          scp -i ~/.ssh/id_rsa \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            ubuntu@"$IP":/home/ubuntu/.kube/config /tmp/kubeconfig
-
-          # Point API server at localhost so local kubectl works over an SSH tunnel
-          # (6443 is not public). Keep a copy as stored on the node too.
+          scp $SSH_OPTS ubuntu@"$IP":/home/ubuntu/.kube/config /tmp/kubeconfig
           cp /tmp/kubeconfig /tmp/kubeconfig-ssm
-          # Ensure server URL is localhost for tunnel use
           sed -i 's|server: https://.*:6443|server: https://127.0.0.1:6443|' /tmp/kubeconfig-ssm
+
+          # ArgoCD initial admin password (from cluster secret)
+          ARGOCD_PASS="$(ssh $SSH_OPTS ubuntu@"$IP" \
+            'sudo k3s kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath={.data.password}' \
+            | base64 -d)"
+
+          # Public UI URL (Ingress + sslip.io), written by Ansible
+          ARGOCD_URL="$(ssh $SSH_OPTS ubuntu@"$IP" 'cat /home/ubuntu/argocd-url.txt' | tr -d '\r\n')"
+          if [ -z "$ARGOCD_URL" ]; then
+            ARGOCD_URL="https://argocd.${IP}.sslip.io"
+          fi
 
           aws ssm put-parameter \
             --name "${SSM_PREFIX}/ec2_public_ip" \
@@ -220,7 +225,20 @@ jobs:
             --value "$(cat /tmp/kubeconfig-ssm)" \
             --overwrite
 
+          aws ssm put-parameter \
+            --name "${SSM_PREFIX}/argocd_admin_password" \
+            --type SecureString \
+            --value "$ARGOCD_PASS" \
+            --overwrite
+
+          aws ssm put-parameter \
+            --name "${SSM_PREFIX}/argocd_url" \
+            --type String \
+            --value "$ARGOCD_URL" \
+            --overwrite
+
           echo "Stored SSM parameters under ${SSM_PREFIX}/"
+          echo "ArgoCD URL: $ARGOCD_URL"
           aws ssm get-parameters-by-path --path "$SSM_PREFIX" --query 'Parameters[].Name' --output text
 
       - name: Show Terraform outputs

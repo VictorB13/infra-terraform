@@ -37,7 +37,7 @@ Useful outputs after apply:
 
 | Workflow | Purpose |
 |---|---|
-| **Build** | Bootstrap S3/DynamoDB → Terraform apply → Ansible → store connection info in SSM |
+| **Build** | Bootstrap S3/DynamoDB → Terraform apply → Ansible (k3s + ArgoCD) → store connection info in SSM |
 | **Destroy** | `terraform destroy` + delete SSM instance parameters |
 
 ### Required GitHub secrets
@@ -59,6 +59,8 @@ Standard parameters — **free** for this usage. Stored under `/todo-app/`:
 | `/todo-app/ec2_public_dns` | String | EC2 public DNS |
 | `/todo-app/ssh_user` | String | SSH username (`ubuntu`) |
 | `/todo-app/kubeconfig` | SecureString | k3s kubeconfig (server = `127.0.0.1:6443` for SSH tunnel) |
+| `/todo-app/argocd_admin_password` | SecureString | ArgoCD `admin` password |
+| `/todo-app/argocd_url` | String | Public UI URL (`https://argocd.<ip>.sslip.io`) |
 
 **Not** stored in SSM (stay in GitHub Secrets): AWS keys, SSH private/public key.
 
@@ -66,10 +68,20 @@ Standard parameters — **free** for this usage. Stored under `/todo-app/`:
 
 ```bash
 aws ssm get-parameter --name /todo-app/ec2_public_ip --query Parameter.Value --output text
+aws ssm get-parameter --name /todo-app/argocd_url --query Parameter.Value --output text
+aws ssm get-parameter --name /todo-app/argocd_admin_password --with-decryption --query Parameter.Value --output text
 aws ssm get-parameter --name /todo-app/kubeconfig --with-decryption --query Parameter.Value --output text > ~/.kube/todo-k3s.yaml
 ```
 
-Then SSH tunnel + `kubectl` as documented in the project notes.
+### ArgoCD dashboard (Ingress + HTTPS)
+
+After Build, open the URL from SSM (no SSH tunnel needed):
+
+1. `https://argocd.<EC2_IP>.sslip.io` (also in `/todo-app/argocd_url`)
+2. User: `admin`
+3. Password: `/todo-app/argocd_admin_password`
+
+TLS is issued by **cert-manager** + Let's Encrypt (may take a few minutes the first time). Browser may warn until the Certificate is Ready.
 
 ## Notes
 
