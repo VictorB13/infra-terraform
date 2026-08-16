@@ -161,14 +161,14 @@ jobs:
             "          ansible_host: ${EC2_IP}" \
             '          ansible_user: ubuntu' \
             "          ansible_ssh_private_key_file: ${HOME}/.ssh/id_rsa" \
-            > inventory/ci.yml
-          cat inventory/ci.yml
+            > /tmp/k3s-inventory.yml
+          cat /tmp/k3s-inventory.yml
 
       - name: Run Ansible (packages → k3s → hardening)
         working-directory: infra-ansible
         run: |
           ansible-playbook playbooks/site.yml \
-            -i inventory/ci.yml \
+            -i /tmp/k3s-inventory.yml \
             -e "k3s_tls_san=${{ steps.tf_out.outputs.ec2_ip }}"
 
       - name: Show Terraform outputs
