@@ -18,9 +18,8 @@ Create the AWS infrastructure for the todo app (Infrastructure as Code).
 
 ## Run manually
 
-1. Bootstrap remote state once (from `modules/state-backend` if not already created).
-
-2. From the repo root:
+1. From the repo root (state backend is bootstrapped automatically in the **Build** workflow;
+   locally, create S3 + DynamoDB once first if they do not exist — see `modules/state-backend`):
 
 ```bash
 terraform init
@@ -38,7 +37,7 @@ Useful outputs after apply:
 
 | Workflow | Purpose |
 |---|---|
-| **Build** | Terraform apply → wait for SSH → Ansible (`infra-ansible` site.yml) |
+| **Build** | Bootstrap S3/DynamoDB (if missing) → Terraform apply → SSH wait → Ansible |
 | **Destroy** | `terraform destroy` |
 
 ### Required GitHub secrets
