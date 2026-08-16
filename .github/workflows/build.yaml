@@ -11,6 +11,7 @@ env:
   TF_WORKING_DIR: .
   ANSIBLE_REPO: VictorB13/infra-ansible
   SSM_PREFIX: /todo-app
+  SSH_USER: ubuntu
 
 jobs:
   build:
@@ -205,6 +206,12 @@ jobs:
             --name "${SSM_PREFIX}/ec2_public_dns" \
             --type String \
             --value "$EC2_DNS" \
+            --overwrite
+
+          aws ssm put-parameter \
+            --name "${SSM_PREFIX}/ssh_user" \
+            --type String \
+            --value "$SSH_USER" \
             --overwrite
 
           aws ssm put-parameter \

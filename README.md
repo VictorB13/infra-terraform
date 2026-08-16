@@ -57,6 +57,7 @@ Standard parameters — **free** for this usage. Stored under `/todo-app/`:
 |---|---|---|
 | `/todo-app/ec2_public_ip` | String | EC2 public IP |
 | `/todo-app/ec2_public_dns` | String | EC2 public DNS |
+| `/todo-app/ssh_user` | String | SSH username (`ubuntu`) |
 | `/todo-app/kubeconfig` | SecureString | k3s kubeconfig (server = `127.0.0.1:6443` for SSH tunnel) |
 
 **Not** stored in SSM (stay in GitHub Secrets): AWS keys, SSH private/public key.
