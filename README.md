@@ -5,13 +5,13 @@ Create the AWS infrastructure for the todo app (Infrastructure as Code).
 ## Stack
 
 - Terraform
-- AWS (VPC, security group, EC2, IAM, S3 state backend)
+- AWS (VPC, security group, EC2, IAM, S3 state backend, SSM Parameter Store)
 
 ## Modules
 
 | Module | Purpose |
 |---|---|
-| `state-backend` | S3 + DynamoDB for Terraform remote state (bootstrap first) |
+| `state-backend` | S3 + DynamoDB for Terraform remote state |
 | `network` | VPC, subnet, IGW, route table |
 | `security` | Security group (`22`, `80`, `443`) |
 | `compute` | EC2, key pair, IAM role/instance profile |
@@ -37,8 +37,8 @@ Useful outputs after apply:
 
 | Workflow | Purpose |
 |---|---|
-| **Build** | Bootstrap S3/DynamoDB (if missing) → Terraform apply → SSH wait → Ansible |
-| **Destroy** | `terraform destroy` |
+| **Build** | Bootstrap S3/DynamoDB → Terraform apply → Ansible → store connection info in SSM |
+| **Destroy** | `terraform destroy` + delete SSM instance parameters |
 
 ### Required GitHub secrets
 
@@ -46,9 +46,29 @@ Useful outputs after apply:
 - `AWS_SECRET_ACCESS_KEY`
 - `SSH_PUBLIC_KEY` — used by Terraform for the EC2 key pair
 - `SSH_PRIVATE_KEY` — used by Ansible to SSH into the instance
-- `ANSIBLE_REPO_TOKEN` — GitHub PAT with read access to `VictorB13/infra-ansible` (required if that repo is private)
 
 Optional variable: `BUCKET_NAME` (defaults to `todo-app-tfstate-victor`).
+
+## SSM Parameter Store (after Build)
+
+Standard parameters — **free** for this usage. Stored under `/todo-app/`:
+
+| Parameter | Type | Contents |
+|---|---|---|
+| `/todo-app/ec2_public_ip` | String | EC2 public IP |
+| `/todo-app/ec2_public_dns` | String | EC2 public DNS |
+| `/todo-app/kubeconfig` | SecureString | k3s kubeconfig (server = `127.0.0.1:6443` for SSH tunnel) |
+
+**Not** stored in SSM (stay in GitHub Secrets): AWS keys, SSH private/public key.
+
+### Read them later
+
+```bash
+aws ssm get-parameter --name /todo-app/ec2_public_ip --query Parameter.Value --output text
+aws ssm get-parameter --name /todo-app/kubeconfig --with-decryption --query Parameter.Value --output text > ~/.kube/todo-k3s.yaml
+```
+
+Then SSH tunnel + `kubectl` as documented in the project notes.
 
 ## Notes
 

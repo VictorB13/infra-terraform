@@ -10,6 +10,7 @@ env:
   AWS_REGION: eu-central-1
   TF_WORKING_DIR: .
   ANSIBLE_REPO: VictorB13/infra-ansible
+  SSM_PREFIX: /todo-app
 
 jobs:
   build:
@@ -106,13 +107,16 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -input=false -auto-approve tfplan
 
-      - name: Read EC2 public IP
+      - name: Read EC2 outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         id: tf_out
         run: |
           IP="$(terraform output -raw ec2_public_ip)"
+          DNS="$(terraform output -raw ec2_public_dns)"
           echo "ec2_ip=$IP" >> "$GITHUB_OUTPUT"
+          echo "ec2_dns=$DNS" >> "$GITHUB_OUTPUT"
           echo "EC2 public IP: $IP"
+          echo "EC2 public DNS: $DNS"
 
       - name: Checkout Ansible repo
         uses: actions/checkout@v4
@@ -170,6 +174,47 @@ jobs:
           ansible-playbook playbooks/site.yml \
             -i /tmp/k3s-inventory.yml \
             -e "k3s_tls_san=${{ steps.tf_out.outputs.ec2_ip }}"
+
+      - name: Store instance connection info in SSM Parameter Store
+        env:
+          EC2_IP: ${{ steps.tf_out.outputs.ec2_ip }}
+          EC2_DNS: ${{ steps.tf_out.outputs.ec2_dns }}
+        run: |
+          set -euo pipefail
+          IP="$EC2_IP"
+
+          # Fetch kubeconfig from the node (written by the k3s Ansible role)
+          scp -i ~/.ssh/id_rsa \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ubuntu@"$IP":/home/ubuntu/.kube/config /tmp/kubeconfig
+
+          # Point API server at localhost so local kubectl works over an SSH tunnel
+          # (6443 is not public). Keep a copy as stored on the node too.
+          cp /tmp/kubeconfig /tmp/kubeconfig-ssm
+          # Ensure server URL is localhost for tunnel use
+          sed -i 's|server: https://.*:6443|server: https://127.0.0.1:6443|' /tmp/kubeconfig-ssm
+
+          aws ssm put-parameter \
+            --name "${SSM_PREFIX}/ec2_public_ip" \
+            --type String \
+            --value "$EC2_IP" \
+            --overwrite
+
+          aws ssm put-parameter \
+            --name "${SSM_PREFIX}/ec2_public_dns" \
+            --type String \
+            --value "$EC2_DNS" \
+            --overwrite
+
+          aws ssm put-parameter \
+            --name "${SSM_PREFIX}/kubeconfig" \
+            --type SecureString \
+            --value "$(cat /tmp/kubeconfig-ssm)" \
+            --overwrite
+
+          echo "Stored SSM parameters under ${SSM_PREFIX}/"
+          aws ssm get-parameters-by-path --path "$SSM_PREFIX" --query 'Parameters[].Name' --output text
 
       - name: Show Terraform outputs
         working-directory: ${{ env.TF_WORKING_DIR }}

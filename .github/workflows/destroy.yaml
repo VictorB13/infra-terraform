@@ -9,6 +9,7 @@ permissions:
 env:
   AWS_REGION: eu-central-1
   TF_WORKING_DIR: .
+  SSM_PREFIX: /todo-app
 
 jobs:
   destroy:
@@ -49,3 +50,16 @@ jobs:
           terraform destroy -input=false -auto-approve \
             -var="bucket_name=${{ vars.BUCKET_NAME || 'todo-app-tfstate-victor' }}" \
             -var="public_key_path=$HOME/.ssh/id_rsa.pub"
+
+      - name: Delete SSM instance parameters
+        run: |
+          set -euo pipefail
+          for name in ec2_public_ip ec2_public_dns kubeconfig; do
+            PARAM="${SSM_PREFIX}/${name}"
+            if aws ssm get-parameter --name "$PARAM" >/dev/null 2>&1; then
+              aws ssm delete-parameter --name "$PARAM"
+              echo "Deleted $PARAM"
+            else
+              echo "Skip (not found): $PARAM"
+            fi
+          done
