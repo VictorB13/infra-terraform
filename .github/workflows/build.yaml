@@ -244,3 +244,36 @@ jobs:
       - name: Show Terraform outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform output
+
+      # If any earlier step fails (plan/apply/SSH/Ansible/SSM), tear down AWS
+      # resources so a broken lab box is not left running. State backend (S3 +
+      # DynamoDB) is kept — same as the Destroy workflow.
+      - name: Destroy on failure
+        if: failure()
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          BUCKET_NAME: ${{ vars.BUCKET_NAME || 'todo-app-tfstate-victor' }}
+        run: |
+          set -euo pipefail
+          echo "::warning::Build failed — destroying infrastructure"
+
+          mkdir -p ~/.ssh
+          if [ ! -f ~/.ssh/id_rsa.pub ]; then
+            echo "${{ secrets.SSH_PUBLIC_KEY }}" > ~/.ssh/id_rsa.pub
+            chmod 644 ~/.ssh/id_rsa.pub
+          fi
+
+          terraform init -input=false
+          terraform destroy -input=false -auto-approve \
+            -var="bucket_name=${BUCKET_NAME}" \
+            -var="public_key_path=$HOME/.ssh/id_rsa.pub"
+
+          for name in ec2_public_ip ec2_public_dns ssh_user kubeconfig argocd_admin_password argocd_url; do
+            PARAM="${SSM_PREFIX}/${name}"
+            if aws ssm get-parameter --name "$PARAM" >/dev/null 2>&1; then
+              aws ssm delete-parameter --name "$PARAM"
+              echo "Deleted $PARAM"
+            else
+              echo "Skip (not found): $PARAM"
+            fi
+          done
