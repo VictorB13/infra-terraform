@@ -57,6 +57,14 @@ resource "aws_iam_role_policy" "ec2_policy" {
           "arn:aws:s3:::${var.bucket_name}",
           "arn:aws:s3:::${var.bucket_name}/*"
         ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+        Resource = "arn:aws:ssm:*:*:parameter/todo-app/*"
       }
     ]
   })

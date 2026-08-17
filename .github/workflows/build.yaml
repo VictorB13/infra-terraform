@@ -108,6 +108,28 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -input=false -auto-approve tfplan
 
+      # App secrets live in SSM (not git). Create once; Ansible pulls them into K8s.
+      - name: Ensure app secrets exist in SSM
+        run: |
+          set -euo pipefail
+          ensure_secret() {
+            local name="$1"
+            if aws ssm get-parameter --name "$name" >/dev/null 2>&1; then
+              echo "SSM parameter already exists: $name"
+            else
+              local value
+              value="$(openssl rand -base64 32)"
+              aws ssm put-parameter \
+                --name "$name" \
+                --type SecureString \
+                --value "$value" \
+                --overwrite
+              echo "Created SSM SecureString: $name"
+            fi
+          }
+          ensure_secret "${SSM_PREFIX}/postgres_password"
+          ensure_secret "${SSM_PREFIX}/jwt_secret"
+
       - name: Read EC2 outputs
         working-directory: ${{ env.TF_WORKING_DIR }}
         id: tf_out
@@ -268,7 +290,7 @@ jobs:
             -var="bucket_name=${BUCKET_NAME}" \
             -var="public_key_path=$HOME/.ssh/id_rsa.pub"
 
-          for name in ec2_public_ip ec2_public_dns ssh_user kubeconfig argocd_admin_password argocd_url; do
+          for name in ec2_public_ip ec2_public_dns ssh_user kubeconfig argocd_admin_password argocd_url postgres_password jwt_secret; do
             PARAM="${SSM_PREFIX}/${name}"
             if aws ssm get-parameter --name "$PARAM" >/dev/null 2>&1; then
               aws ssm delete-parameter --name "$PARAM"

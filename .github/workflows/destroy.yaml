@@ -54,7 +54,7 @@ jobs:
       - name: Delete SSM instance parameters
         run: |
           set -euo pipefail
-          for name in ec2_public_ip ec2_public_dns ssh_user kubeconfig argocd_admin_password argocd_url; do
+          for name in ec2_public_ip ec2_public_dns ssh_user kubeconfig argocd_admin_password argocd_url postgres_password jwt_secret; do
             PARAM="${SSM_PREFIX}/${name}"
             if aws ssm get-parameter --name "$PARAM" >/dev/null 2>&1; then
               aws ssm delete-parameter --name "$PARAM"
